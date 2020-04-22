@@ -1,0 +1,1052 @@
+#!/bin/bash
+
+
+###################### ---------- SHELL FUNCTIONS --------------------------------- ###########################
+
+function etcd-create-pki() {
+  # Verify ca.crt ca.key
+  if [[ -f /var/lib/izctl/pki/etcd/ca.key ]] && [[ -f /var/lib/izctl/pki/etcd/ca.crt ]];then
+     echo "Certificate authority already exists for etcd."
+     echo "Delete /var/lib/izctl/ca.key and /var/lib/izctl/ca.crt"
+     echo "To recreate"
+     return 1
+  fi
+
+  echo "Creating ca crt and root key for etcd cluster"
+  # Create CA
+  openssl genrsa -des3 -out /var/lib/izctl/pki/etcd/ca.key 2048
+  # Create Root Certificate
+  openssl req -x509 -new -nodes -key /var/lib/izctl/pki/etcd/ca.key -sha256 -days 1825 -out /var/lib/izctl/pki/etcd/ca.crt
+  echo "Success"
+
+  return 0
+}
+
+function kube-create-pki() {
+  echo "Created KUBE PKI"
+  return 0
+}
+
+function etcd-edit-config() {
+  vi /etc/izctl/conf/etcd-quorum
+  return 0
+}
+
+function kube-edit-config() {
+  vi /etc/izctl/conf/kube-quorum
+  return 0
+}
+
+function kube-edit-nodes() {
+  vi /etc/izctl/conf/kube-wnodes
+  return 0
+}
+
+function check-etcd-hn() {
+  ETN="_HOSTNAME"
+  ETV=0
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  if [[ $ETC -ge 0 ]] && [[ $ETC -le 4 ]];then
+     for num in $( eval echo {0..$ETC} );do
+        EXISTS=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+        if [[ "$EXISTS" ]]; then
+           ((ETV++))
+        fi
+     done
+     ((ETV--))
+     if [[ $ETC == $ETV ]];then
+        echo 0
+     else
+        echo 1
+     fi
+  else
+    echo 1
+  fi
+}
+
+function check-etcd-ip() {
+  ETN="_IP"
+  ETV=0
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  if [[ $ETC -ge 0 ]] && [[ $ETC -le 4 ]];then
+     for num in $( eval echo {0..$ETC} );do
+        EXISTS=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+        if [[ "$EXISTS" ]]; then
+           ((ETV++))
+        fi
+     done
+     ((ETV--))
+     if [[ $ETC == $ETV ]];then
+        echo 0
+     else
+        echo 1
+     fi
+  else
+    echo 1
+  fi
+}
+
+function check-k8s-hn() {
+  CPN="_HOSTNAME"
+  CPV=0
+  CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  if [[ $CPC -ge 0 ]] && [[ $CPC -le 4 ]];then
+     for num in $( eval echo {0..$CPC} );do
+        EXISTS=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+        if [[ "$EXISTS" ]]; then
+           ((CPV++))
+        fi
+     done
+     ((CPV--))
+     if [[ $CPC == $CPV ]];then
+        echo 0
+     else
+        echo 1
+     fi
+  else
+    echo 1
+  fi
+}
+
+function check-k8s-ip() {
+  CPN="_IP"
+  CPV=0
+  CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  if [[ $CPC -ge 0 ]] && [[ $CPC -le 4 ]];then
+     for num in $( eval echo {0..$CPC} );do
+        EXISTS=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+        if [[ "$EXISTS" ]]; then
+           ((CPV++))
+        fi
+     done
+     ((CPV--))
+     if [[ $CPC == $CPV ]];then
+        echo 0
+     else
+        echo 1
+     fi
+  else
+    echo 1
+  fi
+}
+
+function create-folder-structure() {
+  ETN="_HOSTNAME"
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    mkdir -p /var/lib/izctl/${NODE}/etc/systemd/system/kubelet.service.d/
+    mkdir -p /var/lib/izctl/${NODE}/etc/kubernetes/pki/etcd/
+    mkdir -p /var/lib/izctl/${NODE}/etc/kubernetes/manifests/
+  done
+
+  CPN="_HOSTNAME"
+  CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$CPC} );do
+    NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    mkdir -p /var/lib/izctl/${NODE}/etc/kubernetes/pki/etcd/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/cni/calico/
+    cp /etc/izctl/addons/cni/calico/rbac-kdd.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/cni/calico/
+    cp /etc/izctl/addons/cni/calico/calico.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/cni/calico/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/heapster/
+    cp /etc/izctl/addons/heapster/1-influxdb.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/heapster/
+    cp /etc/izctl/addons/heapster/2-heapster.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/heapster/
+    cp /etc/izctl/addons/heapster/3-heapster-rbac.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/heapster/
+    cp /etc/izctl/addons/heapster/4-grafana.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/heapster/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/dashboard/
+    #cp /etc/izctl/addons/dashboard/dashboard-admin.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/dashboard/
+    cp /etc/izctl/addons/dashboard/kubernetes-dashboard.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/dashboard/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/metrics-server/
+    cp /etc/izctl/addons/metrics-server/auth-delegator.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/metrics-server/
+    cp /etc/izctl/addons/metrics-server/auth-reader.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/metrics-server/
+    cp /etc/izctl/addons/metrics-server/metrics-apiservice.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/metrics-server/
+    cp /etc/izctl/addons/metrics-server/metrics-server-deployment.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/metrics-server/
+    cp /etc/izctl/addons/metrics-server/metrics-server-service.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/metrics-server/
+    cp /etc/izctl/addons/metrics-server/resource-reader.yaml /var/lib/izctl/${NODE}/etc/izctl/addons/metrics-server/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/auditing/
+    cp -r /etc/izctl/addons/auditing/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/authentication/
+    cp -r /etc/izctl/addons/authentication/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/elasticsearch/
+    cp -r /etc/izctl/addons/elasticsearch/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/encryption/
+    cp -r /etc/izctl/addons/encryption/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/kube-apiserver-config/
+    cp -r /etc/izctl/addons/kube-apiserver-config/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/quotas/
+    cp -r /etc/izctl/addons/quotas/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/storage/
+    cp -r /etc/izctl/addons/storage/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/izctl/addons/user-provisioning/
+    cp -r /etc/izctl/addons/user-provisioning/ /var/lib/izctl/${NODE}/etc/izctl/addons/
+
+    mkdir -p /var/lib/izctl/${NODE}/etc/keepalived/
+    mkdir -p /var/lib/izctl/${NODE}/etc/haproxy/
+  done
+}
+
+
+function etcd-create-service-management() {
+  ETN="_HOSTNAME"
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    cat << EOF > /var/lib/izctl/${NODE}/etc/systemd/system/kubelet.service.d/20-etcd-service-manager.conf
+[Service]
+ExecStart=
+ExecStart=/usr/bin/kubelet --pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true
+Restart=always
+EOF
+  done
+}
+
+
+function etcd-create-certs-for-cluster() {
+  ETN="_IP"
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  cp /etc/izctl/conf/etcd-${ETC}.ext /var/lib/izctl/pki/etcd.ext
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    sed -i s/ET$num$ETN/${NODE}/g /var/lib/izctl/pki/etcd.ext
+  done
+
+  local DOMAIN=vdigi.local
+  NAMES=("server" "peer" "healthcheck-client" "apiserver-etcd-client")
+
+  for i in "${!NAMES[@]}"; do
+    NAME=${NAMES[$i]}
+    # Create Private Key for a host
+    openssl genrsa -out /var/lib/izctl/pki/${NAME}.key 2048
+    # Create CSR For Private Key For Host
+    echo -e "\n\n\n\n\n${DOMAIN}\n\n\n\n" | openssl req -new -key /var/lib/izctl/pki/${NAME}.key -out /var/lib/izctl/pki/${NAME}.csr
+    # Create Certificate
+    openssl x509 -req -in /var/lib/izctl/pki/${NAME}.csr -CA /var/lib/izctl/pki/etcd/ca.crt \
+    -CAkey /var/lib/izctl/pki/etcd/ca.key -CAcreateserial -out /var/lib/izctl/pki/${NAME}.crt -days 1825 -sha256 -extfile /var/lib/izctl/pki/etcd.ext
+
+    # Clean up
+    rm -f /var/lib/izctl/pki/${NAME}.csr
+  done
+
+  # Clean up
+  rm -f /var/lib/izctl/pki/etcd.ext
+
+  # Copy and Move keypairs into appropriate directories
+  mv /var/lib/izctl/pki/healthcheck-client.* /var/lib/izctl/pki/etcd/
+  mv /var/lib/izctl/pki/peer.* /var/lib/izctl/pki/etcd/
+  mv /var/lib/izctl/pki/server.* /var/lib/izctl/pki/etcd/
+
+  # Copy the newly minted pki directory contents to this host for ectdctl usage
+  cp -r /var/lib/izctl/pki/*.* /etc/kubernetes/pki/
+  cp -r /var/lib/izctl/pki/etcd/*.* /etc/kubernetes/pki/etcd/
+
+  # Copy the newly minted pki directory contents into each etcd host folder
+  ETN="_HOSTNAME"
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    cp -r /var/lib/izctl/pki/*.* /var/lib/izctl/${NODE}/etc/kubernetes/pki/
+    cp -r /var/lib/izctl/pki/etcd/*.* /var/lib/izctl/${NODE}/etc/kubernetes/pki/etcd/
+  done
+
+  # Copy the newly minted pki directory contents into each control plane host folder
+  CPN="_HOSTNAME"
+  CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$CPC} );do
+    NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    cp -r /var/lib/izctl/pki/*.* /var/lib/izctl/${NODE}/etc/kubernetes/pki/
+    cp -r /var/lib/izctl/pki/etcd/*.* /var/lib/izctl/${NODE}/etc/kubernetes/pki/etcd/
+  done
+}
+
+
+function create-config() {
+  ETN="_HOSTNAME"
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    cp /etc/izctl/conf/etcd-${ETC}-${num}.yaml /var/lib/izctl/${NODE}/etc/kubernetes/manifests/etcd.yaml
+  done
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    for val in $( eval echo {0..$ETC} );do
+      CODE=$( grep "ET$val$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+      sed -i s/ET$val$ETN/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/manifests/etcd.yaml
+    done
+  done
+  ETP="_IP"
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    for val in $( eval echo {0..$ETC} );do
+      CODE=$( grep "ET$val$ETP" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+      sed -i s/ET$val$ETP/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/manifests/etcd.yaml
+    done
+  done
+  CPN="_HOSTNAME"
+  CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$CPC} );do
+    NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    cp /etc/izctl/conf/kube-${ETC}-${CPC}.yaml /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+  done
+  for num in $( eval echo {0..$CPC} );do
+    NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    for val in $( eval echo {0..$ETC} );do
+      CODE=$( grep "ET$val$ETP" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+      sed -i s/ET$val$ETP/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+    done
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "CP$val$ETP" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/CP$val$ETP/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+    done
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "CP_CLUSTERNAME" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/CP_CLUSTERNAME/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+    done
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "OIDC_ISSUER_URL" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/OIDC_ISSUER_URL/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+    done
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "OIDC_CLIENT_ID" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/OIDC_CLIENT_ID/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+    done
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "OIDC_USERNAME_CLAIM" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/OIDC_USERNAME_CLAIM/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+    done
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "CP_LBIP" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/CP_LBIP/${CODE}/g /var/lib/izctl/${NODE}/etc/kubernetes/kube-config.yaml
+    done
+  done
+  CPN="_HOSTNAME"
+  CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$CPC} );do
+    NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    cp /etc/izctl/conf/keepalived-${CPC}-${num}.conf /var/lib/izctl/${NODE}/etc/keepalived/keepalived.conf
+    cp /etc/izctl/conf/haproxy-${CPC}.cfg /var/lib/izctl/${NODE}/etc/haproxy/haproxy.cfg
+  done
+  for num in $( eval echo {0..$CPC} );do
+    NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "CP$val$ETP" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/CP$val$ETP/${CODE}/g /var/lib/izctl/${NODE}/etc/keepalived/keepalived.conf
+      sed -i s/CP$val$ETP/${CODE}/g /var/lib/izctl/${NODE}/etc/haproxy/haproxy.cfg
+      CODE=$( grep "CP$val$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/CP$val$CPN/${CODE}/g /var/lib/izctl/${NODE}/etc/haproxy/haproxy.cfg
+    done
+    for val in $( eval echo {0..$CPC} );do
+      CODE=$( grep "CP_LBIP" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      sed -i s/CP_LBIP/${CODE}/g /var/lib/izctl/${NODE}/etc/keepalived/keepalived.conf
+      sed -i s/CP_LBIP/${CODE}/g /var/lib/izctl/${NODE}/etc/haproxy/haproxy.cfg
+    done
+  done
+}
+
+
+function etcd-distribute() {
+  USER=root
+  ETN="_HOSTNAME"
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    scp -r /var/lib/izctl/${NODE}/etc/*/ "${USER}"@${NODE}:/etc/
+  done
+  ETC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "CP$num$ETN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    scp -r /var/lib/izctl/${NODE}/etc/*/ "${USER}"@${NODE}:/etc/
+  done
+}
+
+
+function etcd-bootstrap() {
+  USER=root
+  local num=$1
+  ETN="_HOSTNAME"
+  HOST=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  if [[ "$HOST" ]];then
+    ssh "${USER}"@${HOST} <<EOSSH
+    swapoff -a
+    free -mh
+    systemctl daemon-reload
+    systemctl enable kubelet
+    systemctl start kubelet
+    systemctl status -l kubelet
+EOSSH
+    echo "Node $HOST bootstraped"
+  else
+    echo "Server node not available"
+  fi
+}
+
+
+function etcd-cluster-health() {
+  ETN="_IP"
+  ETC=$( grep 'ETC' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  cp /etc/izctl/conf/etcd-${ETC}.ext /var/lib/izctl/pki/etcd.ext
+  for num in $( eval echo {0..$ETC} );do
+    NODE=$( grep "ET$num$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+    docker run --rm -it --net host -v /etc/kubernetes:/etc/kubernetes quay.io/coreos/etcd:v3.2.18 etcdctl --cert-file /etc/kubernetes/pki/etcd/peer.crt --key-file /etc/kubernetes/pki/etcd/peer.key --ca-file /etc/kubernetes/pki/etcd/ca.crt --endpoints https://${NODE}:2379 cluster-health
+  done
+}
+
+
+function etcd-registry-dump() {
+  # Get Quroum member ip addresses
+  ET0_IP=$( grep 'ET0_IP' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  keys=$(etcdctl --endpoints=${ET0_IP}:2379 get /registry --prefix -w=json|python -m json.tool|grep key|cut -d ":" -f2|tr -d '"'|tr -d ",")
+  for x in $keys;do
+   echo $x|base64 -d|sort
+  done
+  return 0
+}
+
+function etcd-registry-purge() {
+  # Get Quroum member ip addresses
+  ET0_IP=$( grep 'ET0_IP' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  keys=$(etcdctl --endpoints=${ET0_IP}:2379 get /registry --prefix -w=json|python -m json.tool|grep key|cut -d ":" -f2|tr -d '"'|tr -d ",")
+  for x in $keys;do
+   etcdctl --endpoints=${ET0_IP}:2379 del $(echo $x|base64 -d)
+  done
+  return 0
+}
+
+
+function etcd-stop-master() {
+  USER=root
+  local MASTER=$1
+  ETN="_HOSTNAME"
+  NODE=$( grep "$MASTER$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  if [[ -z "$NODE" ]];then
+    echo "node [ $1 ] does not exist in /etc/izctl/conf/etcd-quorum"
+  else
+    ssh "${USER}"@"${NODE}" <<EOSSH
+    systemctl stop kubelet
+    systemctl stop docker
+    systemctl start docker
+EOSSH
+    echo "$NODE is shutting down"
+  fi
+}
+
+
+function etcd-start-master() {
+  USER=root
+  local MASTER=$1
+  ETN="_HOSTNAME"
+  NODE=$( grep "$MASTER$ETN" /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  if [[ -z "$NODE" ]];then
+    echo "node [ $1 ] does not exist in /etc/izctl/conf/etcd-quorum"
+  else
+    ssh "${USER}"@"${NODE}" <<EOSSH
+    systemctl start kubelet
+EOSSH
+    echo "$NODE is starting up"
+  fi
+}
+
+
+function etcd-backup() {
+  # Get Quroum member ip addresses
+  ET0_IP=$( grep 'ET0_IP' /etc/izctl/conf/etcd-quorum | awk -F: '{print $2}' )
+  etcdctl --endpoints=https://${ET0_IP}:2379 snapshot save snapshotdb
+  HASH=$( etcdctl --endpoints=https://${ET0_IP}:2379 snapshot status snapshotdb | awk '{print $1}' | cut -d, -f1 )
+  REV=$( etcdctl --endpoints=https://${ET0_IP}:2379 snapshot status snapshotdb | awk '{print $2}' | cut -d, -f1 )
+  KEYS=$( etcdctl --endpoints=https://${ET0_IP}:2379 snapshot status snapshotdb | awk '{print $3}' | cut -d, -f1 )
+  DATE=$(date +%Y-%m-%d)
+  mv snapshotdb snapshotdb-${REV}-${HASH}-${KEYS}-${DATE}
+}
+
+
+function kube-bootstrap() {
+  USER=root
+  local num=$1
+  CPN="_HOSTNAME"
+  HOST=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  if [[ "$HOST" ]];then
+    if [[ $num == 0 ]];then
+      ssh "${USER}"@"${HOST}" <<EOSSH
+      swapoff -a
+      free -mh
+      systemctl enable kubelet
+      kubeadm init --config /etc/kubernetes/kube-config.yaml
+      mkdir -p $HOME/.kube
+      cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+      kubectl get nodes
+      kubectl apply -f /etc/izctl/addons/cni/calico/rbac-kdd.yaml
+      kubectl apply -f /etc/izctl/addons/cni/calico/calico.yaml
+      kubectl taint nodes $HOST node-role.kubernetes.io/master-
+      kubectl label nodes $HOST planetype=control
+      echo "readOnlyPort: 10255" >> /var/lib/kubelet/config.yaml
+      systemctl restart kubelet
+EOSSH
+      # Copy files from initial master CPO locally to all control plane nodes
+      scp -r "${USER}"@${HOST}:/etc/kubernetes/pki/*.crt /var/lib/izctl/${HOST}/etc/kubernetes/pki/
+      scp -r "${USER}"@${HOST}:/etc/kubernetes/pki/*.key /var/lib/izctl/${HOST}/etc/kubernetes/pki/
+      scp -r "${USER}"@${HOST}:/etc/kubernetes/pki/*.pub /var/lib/izctl/${HOST}/etc/kubernetes/pki/
+      cp /var/lib/izctl/${HOST}/etc/kubernetes/pki/*.* /var/lib/izctl/pki/
+      cp /var/lib/izctl/pki/*.* /etc/kubernetes/pki/
+      CPN="_HOSTNAME"
+      CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+      for num in $( eval echo {0..$CPC} );do
+        NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+        cp /var/lib/izctl/pki/*.* /var/lib/izctl/${NODE}/etc/kubernetes/pki/
+      done
+    else
+      ssh "${USER}"@"${HOST}" <<EOSSH
+      swapoff -a
+      free -mh
+      systemctl enable kubelet
+      kubeadm init --config /etc/kubernetes/kube-config.yaml
+      mkdir -p $HOME/.kube
+      cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+      kubectl taint nodes $HOST node-role.kubernetes.io/master-
+      kubectl label nodes $HOST planetype=control
+      kubectl get nodes
+EOSSH
+    fi
+  else
+    echo "Server node not found"
+  fi
+}
+
+
+function kube-addon() {
+  USER=root
+  HOST=$( grep "CP0_HOSTNAME" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  local addon=$1
+  if [[ "$addon" == "dashboard" ]];then
+    ssh "${USER}"@"${HOST}" <<EOSSH
+    kubectl create -f /etc/izctl/addons/dashboard/
+EOSSH
+  elif [[ "$addon" == "heapster" ]]; then
+    ssh "${USER}"@"${HOST}" <<EOSSH
+    kubectl create -f /etc/izctl/addons/heapster/
+EOSSH
+  elif [[ "addon" == "metrics-server" ]]; then
+    ssh "${USER}"@"${HOST}" <<EOSSH
+    kubectl create -f /etc/izctl/addons/metrics-server/
+EOSSH
+  else
+    echo "addon not found"
+  fi
+}
+
+function kube-cluster-health() {
+  USER=root
+  HOST=$( grep "CP0_HOSTNAME" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  ssh "${USER}"@"${HOST}" <<EOSSH
+  kubectl get nodes
+  kubectl get svc
+  kubectl describe svc kubernetes
+  kubectl get pods -o wide --all-namespaces
+EOSSH
+}
+
+function kube-edit-nodes() {
+  vi /etc/izctl/conf/kube-wnodes
+}
+
+function kube-add-node() {
+  USER=root
+  local WORKER=$1
+  NODE=$( grep $WORKER /etc/izctl/conf/kube-wnodes | awk -F: '{print $2}' )
+
+  if [[ -z "$NODE" ]];then
+    echo "node [ $1 ] does not exist in /etc/izctl/conf/kube-wnodes"
+  else
+    CP0_HOSTNAME=$( grep 'CP0_HOSTNAME' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    CP_LBIP=$( grep 'CP_LBIP' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    CLUSTER_TOKEN=$( grep 'CLUSTER_TOKEN' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    CLUSTER_SHA=$( grep 'CLUSTER_SHA' /etc/izctl/conf/kube-quorum | awk '{print $2}' )
+
+    ssh "${USER}"@"${NODE}" <<EOSSH
+    swapoff -a
+    free -mh
+    #systemctl stop kubelet
+    #rm -f /etc/kubernetes/pki/ca.crt
+    #rm -f /etc/kubernetes/kubelet.conf
+    #rm -f /etc/kubernetes/bootstrap-kubelet.conf
+    systemctl enable kubelet
+    kubeadm join ${CP_LBIP}:5443 --token ${CLUSTER_TOKEN} --discovery-token-ca-cert-hash ${CLUSTER_SHA}
+EOSSH
+
+    ssh "${USER}"@"${CP0_HOSTNAME}" <<EOSSH
+    kubectl label node $NODE node-role.kubernetes.io/node=
+EOSSH
+
+  fi
+}
+
+
+function kube-remove-node() {
+  USER=root
+  local WORKER=$1
+  NODE=$( grep $WORKER /etc/izctl/conf/kube-wnodes | awk -F: '{print $2}' )
+
+  if [[ -z "$NODE" ]];then
+    echo "node [ $1 ] does not exist in /etc/izctl/conf/kube-wnodes"
+  else
+    CP0_HOSTNAME=$( grep 'CP0_HOSTNAME' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    ssh "${USER}"@"${CP0_HOSTNAME}" <<EOSSH
+    kubectl drain $NODE
+    kubectl delete nodes $NODE
+EOSSH
+    ssh "${USER}"@"${NODE}" <<EOSSH
+    systemctl stop kubelet
+    rm -f /etc/kubernetes/pki/ca.crt
+    rm -f /etc/kubernetes/kubelet.conf
+    rm -f /etc/kubernetes/bootstrap-kubelet.conf
+    systemctl disable kubelet
+    systemctl stop docker
+    systemctl start docker
+    #docker stop $(docker ps -a |awk 'NR!=1{print $1}') && docker rm $(docker ps -a |awk 'NR!=1{print $1}')
+EOSSH
+  fi
+}
+
+
+function kube-stop-master() {
+  USER=root
+  local MASTER=$1
+  CPN="_HOSTNAME"
+  NODE=$( grep "$MASTER$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  if [[ -z "$NODE" ]];then
+    echo "node [ $1 ] does not exist in /etc/izctl/conf/kube-quorum"
+  else
+    ssh "${USER}"@"${NODE}" <<EOSSH
+    systemctl stop kubelet
+    systemctl stop docker
+    systemctl start docker
+    systemctl disable kubelet
+EOSSH
+    echo "$NODE is shutting down"
+  fi
+}
+
+
+function kube-start-master() {
+  USER=root
+  local MASTER=$1
+  CPN="_HOSTNAME"
+  NODE=$( grep "$MASTER$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  if [[ -z "$NODE" ]];then
+    echo "node [ $1 ] does not exist in /etc/izctl/conf/kube-quorum"
+  else
+    ssh "${USER}"@"${NODE}" <<EOSSH
+    systemctl enable kubelet
+    systemctl start kubelet
+EOSSH
+    echo "$NODE is starting up"
+  fi
+}
+
+
+function kube-distribute() {
+  #ETC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  #for num in $( eval echo {0..$ETC} );do
+  #  NODE=$( grep "CP$num$ETN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  #  scp -r /var/lib/izctl/${NODE}/etc/*/ "${USER}"@${NODE}:/etc/
+  #done
+  USER=root
+  CPN="_HOSTNAME"
+  CPC=$( grep 'CPC' /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  for num in $( eval echo {0..$CPC} );do
+    NODE=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+    echo $num
+    echo $NODE
+    scp -r /etc/kubernetes/pki/*.* "${USER}"@${NODE}:/etc/kubernetes/pki/
+  done
+}
+
+
+function kube-init-ha() {
+  USER=root
+  local num=$1
+  CPN="_HOSTNAME"
+  HOST=$( grep "CP$num$CPN" /etc/izctl/conf/kube-quorum | awk -F: '{print $2}' )
+  if [[ "$HOST" ]];then
+    ssh "${USER}"@"${HOST}" <<EOSSH
+    systemctl enable keepalived
+    systemctl start keepalived
+    systemctl enable haproxy
+    systemctl start haproxy
+EOSSH
+    echo "HA enabled on host $HOST"
+  else
+    echo "Host not found"
+  fi
+}
+
+
+function apply() {
+  if [[ -f /var/lib/izctl/pki/etcd/ca.key ]] && [[ -f /var/lib/izctl/pki/etcd/ca.crt ]];then
+    if [[ $(check-etcd-hn) == 0 ]] && [[ $(check-etcd-ip) == 0 ]] && [[ $(check-k8s-hn) == 0 ]] && [[ $(check-k8s-ip) == 0 ]];then
+      echo "Applying configuration"
+      create-folder-structure
+      etcd-create-service-management
+      etcd-create-certs-for-cluster
+      create-config
+      echo "Configuration Applied"
+    else
+      cat <<EOF
+
+      Preflight check failed
+      Check the following
+        1: Certificate exists in /var/lib/kpctl/ca.crt
+        2: Root key exists in /var/lib/kpctl/ca.key
+        3: Configuration in /etc/kpctl/conf/etcd-quorum
+        4: Configuration in /etc/kpctl/conf/kube-quorum
+
+EOF
+    fi
+  else
+    cat <<EOF
+
+    Preflight check failed
+    Check the following
+      1: Certificate exists in /var/lib/kpctl/ca.crt
+      2: Root key exists in /var/lib/kpctl/ca.key
+      3: Configuration in /etc/kpctl/conf/etcd-quorum
+      4: Configuration in /etc/kpctl/conf/kube-quorum
+
+EOF
+  fi
+}
+
+function usage() {
+  cat <<EOF
+
+  izctl v1.0.0
+  Victor Green
+  thevictorgreen@gmail.com
+
+  Summary:
+         izctl or kubernetes provisioning control is a tool designed specifically to create
+         highly available kubernetes clusters from a single machine.
+
+  Usage: $0 command [ options[params] ]
+         izctl -h
+         izctl -p [ etcd | k8s ]
+         izctl -c [ etcd | k8s ]
+         izctl -a
+         izctl -e [ upload | bootstrap [ -s | --server [ 0-5 ]] | cluster-health | registry-dump | registry-purge | shutdown-node [ -s | --server [ 0-5 ]] | startup-node [ -s | --server [ 0-5 ]] | set-ipaddr ]
+         izctl -k [ bootstrap [ -s | --server [ 0-5 ]] | upload | cluster-health | addon | set-ipaddr ]
+
+  Commands:
+  Either long or short options are allowed.
+         -h --help                   this message
+         -p --pki    [option]        create ca and root cert
+         -c --config [option]        edit configuration
+         -a --apply                  create configuration
+         -e --etcd   [option[param]] etcd related operations
+         -k --k8s    [option[param]] k8s related operations
+
+  Options:
+         -s --server [option]        server to perform action on
+         -m --module [option]        module to install
+
+  Sample HA Deployment:
+    3 etcd nodes
+    3 k8s master nodes
+    3 k8s worker nodes
+
+         [ETC QUORUM]
+         izctl --pki etcd
+         izctl --config etcd
+         izctl --config k8s
+         izctl --config nodes
+         izctl --apply
+         izctl --etcd upload
+         izctl --etcd bootstrap --server 0
+         izctl --etcd bootstrap --server 1
+         izctl --etcd bootstrap --server 2
+         izctl --etcd cluster-health
+
+         [CONTROL PLANE]
+         izctl --k8s bootstrap --server 0
+         izctl --k8s upload
+         izctl --k8s add-module --module heapster
+         izctl --k8s add-module --module dashboard
+         izctl --k8s bootstrap --server 1
+         izctl --k8s bootstrap --server 2
+         izctl --k8s cluster-health
+         izctl --etcd registry-dump
+         izctl --k8s init-ha --server 0
+         izctl --k8s init-ha --server 1
+         izctl --k8s init-ha --server 2
+
+         [DATA PLANE]
+         izctl --k8s add-node --server WK000
+         izctl --k8s add-node --server WK001
+         izctl --k8s add-node --server WK002
+
+         [ADD ONS]
+         izctl --k8s add-module --module heapster
+         izctl --k8s add-module --module dashboard
+         izctl --k8s add-module --module dex
+
+EOF
+}
+###################### ---------- CLI PARAMETER PARSER --------------------- ############################
+
+# Declare global variables for each option that can accept params
+PKI=
+CONFIG=
+ETCD=
+K8S=
+SERVER=
+MODULE=
+
+# Convert long commands into short
+for arg in "$@";do
+    shift
+    case "$arg" in
+      "--help")   set -- "$@" "-h" ;;
+      "--pki")    set -- "$@" "-p" ;;
+      "--config") set -- "$@" "-c" ;;
+      "--apply")  set -- "$@" "-a" ;;
+      "--etcd")   set -- "$@" "-e" ;;
+      "--k8s")    set -- "$@" "-k" ;;
+      "--server") set -- "$@" "-s" ;;
+      "--module") set -- "$@" "-m" ;;
+      *)          set -- "$@" "$arg"
+    esac
+done
+
+# Check for command
+while getopts "hp:c:ae:k:s:m:" OPTION;do
+    case $OPTION in
+      h)
+         usage
+         exit 0
+         ;;
+      p)
+         PKI=$OPTARG
+         ;;
+      c)
+         CONFIG=$OPTARG
+         ;;
+      a)
+         apply
+         exit 0
+         ;;
+      e)
+         ETCD=$OPTARG
+         ;;
+      k)
+         K8S=$OPTARG
+         ;;
+      s) SERVER=$OPTARG
+         ;;
+      m) MODULE=$OPTARG
+         ;;
+      ?)
+         usage
+         exit 0
+     esac
+done
+
+# Any single command must be present
+if [[ -z $PKI ]] && [[ -z $CONFIG ]] && [[ -z $ETCD ]] && [[ -z $K8S ]];then
+  usage
+  exit 0
+fi
+
+# Process individual commands
+
+# For -p --pki
+if [[ "$PKI" ]]
+then
+     if [[ "$PKI" == "etcd" ]]
+     then
+       etcd-create-pki
+       exit 0
+     elif [[ "$PKI" == "k8s" ]]
+     then
+       kube-create-pki
+       exit 0
+     else
+       usage
+       exit 1
+     fi
+fi
+
+# For -c --config
+if [[ "$CONFIG" ]]
+then
+     if [[ "$CONFIG" == "etcd" ]]
+     then
+       etcd-edit-config
+       exit 0
+     elif [[ "$CONFIG" == "k8s" ]]
+     then
+       kube-edit-config
+       exit 0
+     elif [[ "$CONFIG" == "nodes" ]]
+     then
+       kube-edit-nodes
+       exit 0
+     else
+       usage
+       exit 1
+     fi
+fi
+
+# For -e --etcd
+if [[ "$ETCD" ]]
+then
+     if [[ "$ETCD" == "upload" ]]
+     then
+       etcd-distribute
+       exit 0
+     elif [[ "$ETCD" == "bootstrap" ]]
+     then
+       if [[ "$SERVER" =~ [0-4] ]]
+       then
+         etcd-bootstrap $SERVER
+       else
+         usage
+       fi
+       exit 0
+     elif [[ "$ETCD" == "cluster-health" ]]
+     then
+       etcd-cluster-health
+       exit 0
+     elif [[ "$ETCD" == "registry-dump" ]]
+     then
+       etcd-registry-dump
+       exit 0
+     elif [[ "$ETCD" == "registry-purge" ]]
+     then
+       etcd-registry-purge
+       exit 0
+     elif [[ "$ETCD" == "registry-backup" ]]
+     then
+       etcd-backup
+       exit 0
+     elif [[ "$ETCD" == "stop-master" ]]
+       then
+         if [[ "$SERVER" =~ ET[0-4] ]]
+         then
+           etcd-stop-master $SERVER
+           exit 0
+         else
+           echo "Bad Form"
+         fi
+         exit 0
+     elif [[ "$ETCD" == "start-master" ]]
+        then
+          if [[ "$SERVER" =~ ET[0-4] ]]
+          then
+            etcd-start-master $SERVER
+            exit 0
+          else
+            echo "Bad Form"
+          fi
+          exit 0
+     else
+       usage
+       exit 1
+     fi
+fi
+
+
+# For -k --k8s
+if [[ "$K8S" ]]
+then
+  if [[ "$K8S" == "bootstrap" ]]
+  then
+    if [[ "$SERVER" =~ [0-4] ]]
+    then
+      kube-bootstrap $SERVER
+    else
+      usage
+    fi
+    exit 0
+  elif [[ "$K8S" == "add-module" ]]
+  then
+    if [[ "$MODULE" == "dashboard" ]]
+    then
+      kube-addon $MODULE
+    elif [[ "$MODULE" == "heapster" ]]
+    then
+      kube-addon $MODULE
+    else
+      usage
+    fi
+    exit 0
+  elif [[ "$K8S" == "add-node" ]]
+    then
+      if [[ "$SERVER" =~ WK[0-9][0-9][0-9] ]]
+      then
+        kube-add-node $SERVER
+        exit 0
+      else
+        echo "Bad Form"
+      fi
+      exit 0
+  elif [[ "$K8S" == "remove-node" ]]
+    then
+      if [[ "$SERVER" =~ WK[0-9][0-9][0-9] ]]
+      then
+        kube-remove-node $SERVER
+        exit 0
+      else
+        echo "Bad Form"
+      fi
+      exit 0
+  elif [[ "$K8S" == "stop-master" ]]
+    then
+      if [[ "$SERVER" =~ CP[0-4] ]]
+      then
+        kube-stop-master $SERVER
+        exit 0
+      else
+        echo "Bad Form"
+      fi
+      exit 0
+  elif [[ "$K8S" == "start-master" ]]
+    then
+      if [[ "$SERVER" =~ CP[0-4] ]]
+      then
+        kube-start-master $SERVER
+        exit 0
+      else
+        echo "Bad Form"
+      fi
+      exit 0
+  elif [[ "$K8S" == "init-ha" ]]
+    then
+      if [[ "$SERVER" =~ [0-4] ]]
+      then
+        kube-init-ha $SERVER
+        exit 0
+      else
+        echo "Bad Form"
+      fi
+    exit 0
+  elif [[ "$K8S" == "upload" ]]
+  then
+    kube-distribute
+    exit 0
+  elif [[ "$K8S" == "cluster-health" ]]
+  then
+    kube-cluster-health
+    exit 0
+  else
+    usage
+    exit 1
+  fi
+fi

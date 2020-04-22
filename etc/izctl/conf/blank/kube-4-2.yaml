@@ -1,0 +1,27 @@
+apiVersion: kubeadm.k8s.io/v1alpha2
+kind: MasterConfiguration
+kubernetesVersion: v1.11.0
+apiServerExtraArgs:
+  apiserver-count: "3"
+apiServerCertSANs:
+  # Control Plane Endpoints
+  - "CP0_IP"
+  - "CP1_IP"
+  - "CP2_IP"
+  - "127.0.0.1"
+etcd:
+  external:
+    endpoints:
+    # ETCD Cluster Endpoints
+    - https://ET0_IP:2379
+    - https://ET1_IP:2379
+    - https://ET2_IP:2379
+    - https://ET3_IP:2379
+    - https;//ET4_IP:2379
+    caFile: /etc/kubernetes/pki/etcd/ca.crt
+    certFile: /etc/kubernetes/pki/apiserver-etcd-client.crt
+    keyFile: /etc/kubernetes/pki/apiserver-etcd-client.key
+networking:
+    # This CIDR is a Calico default. Substitute or remove for your CNI provider.
+    podSubnet: "192.168.0.0/16"
+tokenTTL: "0"
