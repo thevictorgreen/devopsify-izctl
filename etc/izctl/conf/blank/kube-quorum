@@ -1,0 +1,14 @@
+CP0_HOSTNAME:
+CP0_IP:
+CP0_TOKEN:
+CP0_ROLE:INITIAL_MASTER
+CPC:
+CLUSTER_TOKEN:
+CLUSTER_SHA
+MY_ROLE:
+
+# 
+# Place all Kubernetes HA Masters in this file
+# On lines 0-13
+# Update info where appropriate
+# Acceptable roles are: INITIAL_MASTER SECOND_MASTER THIRD_MASTER WORKER_NODE
