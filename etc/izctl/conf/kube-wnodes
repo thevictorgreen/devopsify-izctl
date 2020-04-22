@@ -1,0 +1,7 @@
+WKC:1
+WK000:k8s2.vdigi.local
+WK001:k8s3.vdigi.local
+
+# 
+# Place all Kubernetes Worker nodes in this file
+# in the following form: WKNNN:FQDN

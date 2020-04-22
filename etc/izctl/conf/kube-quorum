@@ -1,0 +1,27 @@
+CP_CLUSTERNAME:vdigitalgroup
+CP_LBIP:192.168.33.200
+OIDC_ISSUER_URL:https://accounts.google.com
+OIDC_CLIENT_ID:570465217390-t44afihn545rblo3jlpi14qk486qvdp4.apps.googleusercontent.com
+OIDC_USERNAME_CLAIM:email
+CP0_HOSTNAME:k8s0.vdigi.local
+CP0_IP:192.168.33.9
+CP0_TOKEN:
+CP0_ROLE:INITIAL_MASTER
+CP1_HOSTNAME:k8s1.vdigi.local
+CP1_IP:192.168.33.10
+CP1_TOKEN:
+CP1_ROLE:SECOND_MASTER
+CP2_HOSTNAME:
+CP2_IP:
+CP2_TOKEN:
+CP2_ROLE:THIRD_MASTER
+CPC:1
+CLUSTER_TOKEN:ucy554.oc8g73s2ti2adxqe
+CLUSTER_SHA sha256:48cf5d2992aad6402f1c77710dfd721b79d8a24556837dea0512c379db7fbb6f
+MY_ROLE:
+
+# 
+# Place all Kubernetes HA Masters in this file
+# On lines 0-13
+# Update info where appropriate
+# Acceptable roles are: INITIAL_MASTER SECOND_MASTER THIRD_MASTER WORKER_NODE

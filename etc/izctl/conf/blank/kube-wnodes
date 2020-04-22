@@ -1,0 +1,10 @@
+WKC:
+WK000::
+
+# 
+# Place all Kubernetes Worker nodes in this file
+# in the following form: WKNNN:FQDN:IPV4ADDR
+# EXAMPLE-
+# WK000:host1.example.com:192.168.0.1
+# WK001:host2.example.com:192.168.0.2
+# WKNNN:hostn.example.com:192.168.0.n

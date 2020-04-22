@@ -1,0 +1,11 @@
+ET0_HOSTNAME:etcd0.vdigi.local
+ET0_IP:192.168.33.6
+ET0_ROLE:INITIAL_MASTER
+ET1_HOSTNAME:etcd1.vdigi.local
+ET1_IP:192.168.33.7
+ET1_ROLE:SECOND_MASTER
+ETC:1
+MY_ROLE:
+
+# Update values where appropriate
+# Acceptable roles are: INITIAL_MASTER SECOND_MASTER THIRD_MASTER

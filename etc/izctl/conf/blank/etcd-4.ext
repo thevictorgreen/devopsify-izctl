@@ -1,0 +1,4 @@
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName=IP:ET0_IP,IP:ET1_IP,IP:ET2_IP,IP:ET3_IP,IP:ET4_IP

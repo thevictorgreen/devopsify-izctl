@@ -1,0 +1,8 @@
+ET0_HOSTNAME:
+ET0_IP:
+ET0_ROLE:INITIAL_MASTER
+ETC:0
+MY_ROLE:
+
+# Update values where appropriate
+# Acceptable roles are: INITIAL_MASTER SECOND_MASTER THIRD_MASTER
